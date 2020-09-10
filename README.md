@@ -10,6 +10,9 @@ Example:
 #include <stdio.h>
 #include "timeit.h"
 
+/*
+ * A "complex" function for which we want to know how long an execution takes.
+ */
 int calculate(int x) {
     for (int i = 0; i < 1000; ++i) {
         x = x * x + ~x * (1 - x);
@@ -24,7 +27,12 @@ int calculate(int x) {
 int main() {
     int x = 2;
     int y;
+
+    /*
+     * Measure the time and print the statistics.
+     */
     TIMEIT(y = calculate(x));
+
     return 0;
 }
 ```
