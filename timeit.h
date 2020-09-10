@@ -7,7 +7,7 @@
 #include <sys/time.h>
 
 #ifndef TIT_MIN_TOTAL_RUNTIME_MS
-#define TIT_MIN_TOTAL_RUNTIME_MS                        1500
+#define TIT_MIN_TOTAL_RUNTIME_MS                                        1500
 #endif
 
 typedef long tit_time_us;
@@ -107,35 +107,39 @@ static inline void _tit_stats_collector_sort_runs(_tit_stats_collector_t *collec
     qsort(collector->runs, collector->runs_count, sizeof(*collector->runs), _tit_sinle_run_cmp);
 }
 
-#define _TIT_SINGLE_RUN(code)                                               \
-({                                                                          \
-    const tit_timespan_us _tit_start = _tit_now();                          \
-    code;                                                                   \
-    const tit_timespan_us _tit_runtime = _tit_now() - _tit_start;           \
-    (_tit_single_run_t) {                                                   \
-        .ts         = _tit_start,                                           \
-        .runtime    = _tit_runtime                                          \
-    };                                                                      \
+#define _TIT_SINGLE_RUN(code)                                                   \
+({                                                                              \
+    const tit_timespan_us _tit_start = _tit_now();                              \
+    code;                                                                       \
+    const tit_timespan_us _tit_runtime = _tit_now() - _tit_start;               \
+    (_tit_single_run_t) {                                                       \
+        .ts         = _tit_start,                                               \
+        .runtime    = _tit_runtime                                              \
+    };                                                                          \
 })
 
-#define _TIT_COLLECT_STATS(code)                                            \
-({                                                                          \
-    _tit_stats_collector_t _tit_collector = _tit_stats_collector_create();    \
-    do {                                                                    \
-        const _tit_single_run_t _tit_single_run = _TIT_SINGLE_RUN(code);    \
-        _tit_stats_collector_append(&_tit_collector, &_tit_single_run);        \
-        if (_tit_single_run.runtime == 0) {                                \
-            _tit_collector.total_runtime += 1;                                \
-        }                                                                   \
-    } while (_tit_collector.total_runtime < 1000 * TIT_MIN_TOTAL_RUNTIME_MS);     \
-    _tit_stats_collector_sort_runs(&_tit_collector);                         \
-    _tit_collector;                                                         \
+#define _TIT_COLLECT_STATS(code)                                                \
+({                                                                              \
+    _tit_stats_collector_t _tit_collector = _tit_stats_collector_create();      \
+    do {                                                                        \
+        const _tit_single_run_t _tit_single_run = _TIT_SINGLE_RUN(code);        \
+        _tit_stats_collector_append(&_tit_collector, &_tit_single_run);         \
+        if (_tit_single_run.runtime == 0) {                                     \
+            _tit_collector.total_runtime += 1;                                  \
+        }                                                                       \
+    } while (_tit_collector.total_runtime < 1000 * TIT_MIN_TOTAL_RUNTIME_MS);   \
+    _tit_stats_collector_sort_runs(&_tit_collector);                            \
+    _tit_collector;                                                             \
 })
 
 static inline double _tit_abs(double x) {
     return x >= 0 ? x : -x;
 }
 
+/*
+ * To avoid a dependency to libm, a simple sqrt-function is used. Otherwise
+ * the user of the library would be forced to link against libm.
+ */
 static inline double _tit_sqrt(double x) {
     const double max_diff = 1e-12;
     double x_sqrt = 1.0;
@@ -234,16 +238,16 @@ static inline void _tit_execution_stats_dump(const tit_execution_stats_t *stats)
     printf("  Code: %s\n", stats->code);
 }
 
-#define _TIT_STR(s)                                                         #s
+#define _TIT_STR(s)                                                                 #s
 
-#define TIMEIT(exec_code)                                                       \
-({                                                                              \
-    const _tit_stats_collector_t _tit_collector = _TIT_COLLECT_STATS(exec_code); \
-    tit_execution_stats_t _tit_stats =                                           \
-        _tit_executions_stats_compute(&_tit_collector);                         \
-    _tit_stats.code = #exec_code;                                               \
-    _tit_execution_stats_dump(&_tit_stats);                                      \
-    _tit_stats;                                                                 \
+#define TIMEIT(exec_code)                                                           \
+({                                                                                  \
+    const _tit_stats_collector_t _tit_collector = _TIT_COLLECT_STATS(exec_code);    \
+    tit_execution_stats_t _tit_stats =                                              \
+        _tit_executions_stats_compute(&_tit_collector);                             \
+    _tit_stats.code = #exec_code;                                                   \
+    _tit_execution_stats_dump(&_tit_stats);                                         \
+    _tit_stats;                                                                     \
 })
 
 #endif
