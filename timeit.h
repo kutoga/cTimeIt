@@ -31,7 +31,7 @@ typedef struct {
     tit_timespan_us q99;
     tit_timespan_us q99_9;
     tit_timespan_us q99_99;
-} tit_execution_stat_t;
+} tit_execution_stats_t;
 
 static inline void _tit_fatal(const char *message) {
     fprintf(stderr, "TIMEIT Error: %s\n", message);
@@ -56,11 +56,11 @@ typedef struct {
     int runs_count;
     int runs_arr_capacity;
     tit_timespan_us total_runtime;
-} _tit_stat_collector_t;
+} _tit_stats_collector_t;
 
-static inline _tit_stat_collector_t _tit_stat_collector_create() {
-    const int default_runs_arr_capacity = 256;
-    _tit_stat_collector_t collector = {
+static inline _tit_stats_collector_t _tit_stats_collector_create() {
+    const int default_runs_arr_capacity = 1024 * 1024;
+    _tit_stats_collector_t collector = {
         .runs               = malloc(sizeof(*collector.runs) * default_runs_arr_capacity),
         .runs_arr_capacity  = default_runs_arr_capacity,
         .runs_count         = 0,
@@ -72,11 +72,11 @@ static inline _tit_stat_collector_t _tit_stat_collector_create() {
     return collector;
 }
 
-static inline void _tit_stat_collector_cleanup(_tit_stat_collector_t *collector) {
+static inline void _tit_stats_collector_cleanup(_tit_stats_collector_t *collector) {
     free(collector->runs);
 }
 
-static inline void _tit_stat_collector_ensure_capacity(_tit_stat_collector_t *collector, int required_capacity) {
+static inline void _tit_stats_collector_ensure_capacity(_tit_stats_collector_t *collector, int required_capacity) {
     if (required_capacity <= collector->runs_arr_capacity) {
         return;
     }
@@ -93,8 +93,8 @@ static inline void _tit_stat_collector_ensure_capacity(_tit_stat_collector_t *co
     collector->runs_arr_capacity = new_capacity;
 }
 
-static inline void _tit_stat_collector_append(_tit_stat_collector_t *collector, const _tit_single_run_t *run) {
-    _tit_stat_collector_ensure_capacity(collector, collector->runs_count + 1);
+static inline void _tit_stats_collector_append(_tit_stats_collector_t *collector, const _tit_single_run_t *run) {
+    _tit_stats_collector_ensure_capacity(collector, collector->runs_count + 1);
     collector->runs[collector->runs_count++] = *run;
     collector->total_runtime += run->runtime;
 }
@@ -103,7 +103,7 @@ static inline int _tit_sinle_run_cmp(const void *lhs, const void *rhs) {
     return ((_tit_single_run_t *)lhs)->runtime - ((_tit_single_run_t *)rhs)->runtime;
 }
 
-static inline void _tit_stat_collector_sort_runs(_tit_stat_collector_t *collector) {
+static inline void _tit_stats_collector_sort_runs(_tit_stats_collector_t *collector) {
     qsort(collector->runs, collector->runs_count, sizeof(*collector->runs), _tit_sinle_run_cmp);
 }
 
@@ -120,24 +120,24 @@ static inline void _tit_stat_collector_sort_runs(_tit_stat_collector_t *collecto
 
 #define _TIT_COLLECT_STATS(code)                                            \
 ({                                                                          \
-    _tit_stat_collector_t _tit_collector = _tit_stat_collector_create();    \
+    _tit_stats_collector_t _tit_collector = _tit_stats_collector_create();    \
     do {                                                                    \
         const _tit_single_run_t _tit_single_run = _TIT_SINGLE_RUN(code);    \
-        _tit_stat_collector_append(&_tit_collector, &_tit_single_run);        \
+        _tit_stats_collector_append(&_tit_collector, &_tit_single_run);        \
         if (_tit_single_run.runtime == 0) {                                \
-            _tit_collector.total_runtime += 10;                                \
+            _tit_collector.total_runtime += 1;                                \
         }                                                                   \
-    } while (_tit_collector.total_runtime < TIT_MIN_TOTAL_RUNTIME_MS);     \
-    _tit_stat_collector_sort_runs(&_tit_collector);                         \
+    } while (_tit_collector.total_runtime < 1000 * TIT_MIN_TOTAL_RUNTIME_MS);     \
+    _tit_stats_collector_sort_runs(&_tit_collector);                         \
     _tit_collector;                                                         \
 })
 
 static inline double _tit_abs(double x) {
-    return x > 0 ? x : -x;
+    return x >= 0 ? x : -x;
 }
 
 static inline double _tit_sqrt(double x) {
-    const double max_diff = 1e-16;
+    const double max_diff = 1e-12;
     double x_sqrt = 1.0;
     while (_tit_abs(x_sqrt * x_sqrt - x) >= max_diff) {
         x_sqrt = (x / x_sqrt + x_sqrt) / 2;
@@ -145,11 +145,11 @@ static inline double _tit_sqrt(double x) {
     return x_sqrt;
 }
 
-static inline tit_execution_stat_t _tit_executions_stats_compute(const _tit_stat_collector_t *collector) {
+static inline tit_execution_stats_t _tit_executions_stats_compute(const _tit_stats_collector_t *collector) {
     if (collector->runs_count < 1) {
         _tit_fatal("Need at least one run to compute some statistics!");
     }
-    tit_execution_stat_t stats = {
+    tit_execution_stats_t stats = {
         .execution_count    = collector->runs_count,
     };
     const _tit_single_run_t *min = &collector->runs[0];
@@ -177,34 +177,72 @@ static inline tit_execution_stat_t _tit_executions_stats_compute(const _tit_stat
 }
 
 static inline void _tit_stringify_timespan(tit_timespan_us timespan) {
-    printf("%f us", timespan);
+    if (timespan < 1) {
+        printf("%.3f ns", timespan * 1000);
+    } else if (timespan < 1000) {
+        printf("%.3f us", timespan);
+    } else if (timespan < 1000 * 1000) {
+        printf("%.3f ms", timespan / 1000);
+    } else {
+        printf("%.3f s", timespan / (1000 * 1000));
+    }
 } 
 
-static inline void _tit_execution_stat_dump(const tit_execution_stat_t *stats) {
+static inline void _tit_execution_stats_dump(const tit_execution_stats_t *stats) {
     printf("TIMEIT\n");
 
-    printf("  EXECUTIONS: %ld\n", stats->execution_count);
+    if (stats->execution_count < 1) {
+        _tit_fatal("Cannot dump statistics about less than 1 run!");
+    }
 
-    printf("  MIN [at %ld]: ", stats->min_ts);
+    printf("  Executions: %ld\n", stats->execution_count);
+
+    printf("  Min [at %ld]:   ", stats->min_ts);
     _tit_stringify_timespan(stats->min);
     printf("\n");
 
-    printf("  MAX [at %ld]: ", stats->max_ts);
+    printf("  Max [at %ld]:   ", stats->max_ts);
     _tit_stringify_timespan(stats->max);
     printf("\n");
 
-    (void)stats;
+    printf("  Avg:             ");
+    _tit_stringify_timespan(stats->avg);
+    printf("\n");
+
+    if (stats->execution_count > 1) {
+        printf("  Std. deviation:  +/- ");
+        _tit_stringify_timespan(stats->standard_deviation);
+        printf("\n");
+    }
+
+    printf("  95%%-quantile:    ");
+    _tit_stringify_timespan(stats->q95);
+    printf("\n");
+
+    printf("  99%%-quantile:    ");
+    _tit_stringify_timespan(stats->q99);
+    printf("\n");
+
+    printf("  99.9%%-quantile:  ");
+    _tit_stringify_timespan(stats->q99_9);
+    printf("\n");
+
+    printf("  99.99%%-quantile: ");
+    _tit_stringify_timespan(stats->q99_99);
+    printf("\n");
+
+    printf("  Code: %s\n", stats->code);
 }
 
 #define _TIT_STR(s)                                                         #s
 
 #define TIMEIT(exec_code)                                                       \
 ({                                                                              \
-    const _tit_stat_collector_t _tit_collector = _TIT_COLLECT_STATS(exec_code); \
-    tit_execution_stat_t _tit_stats =                                           \
+    const _tit_stats_collector_t _tit_collector = _TIT_COLLECT_STATS(exec_code); \
+    tit_execution_stats_t _tit_stats =                                           \
         _tit_executions_stats_compute(&_tit_collector);                         \
     _tit_stats.code = #exec_code;                                               \
-    _tit_execution_stat_dump(&_tit_stats);                                      \
+    _tit_execution_stats_dump(&_tit_stats);                                      \
     _tit_stats;                                                                 \
 })
 

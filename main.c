@@ -14,11 +14,8 @@ int calculate(int x) {
 
 int main() {
     int x = 2;
-    tit_execution_stat_t stat = TIMEIT({
-        for (int i = 0; i < 3; ++i) {
-            calculate(x);
-        }
-    });
-    printf("Code:\n%s\n", stat.code);
+    int y;
+    tit_execution_stats_t stats = TIMEIT(y = calculate(x));
+    printf("Average runtime in us: %f\n", stats.avg);
     return 0;
 }
